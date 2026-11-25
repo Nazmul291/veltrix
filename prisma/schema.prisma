@@ -1,0 +1,245 @@
+// Veltrix — multi-tenant developer cloud
+//
+// Security notes
+// - No provider secret ever lives in .env. They live in ProviderCredential,
+//   encrypted with AES-256-GCM (see app/services/crypto.server.ts).
+// - Each ProviderCredential row is one (provider, field, version). Rotation
+//   creates a new version and destroys the ciphertext of the previous one, so
+//   the table keeps a full audit trail without keeping old secrets around.
+// - The ciphertext is bound to (provider, field, version) via GCM additional
+//   authenticated data, so swapping ciphertext between rows makes decryption fail.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum Plan {
+  FREE
+  PRO
+  TEAM
+}
+
+enum AdminRoleType {
+  SUPPORT // read-only access to the admin panel
+  ADMIN // can view provider credential status
+  SUPER_ADMIN // can create / rotate / revoke provider credentials
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  PAUSED
+  CANCELED
+}
+
+enum Provider {
+  FLY
+  NEON
+  UPSTASH
+  PADDLE
+}
+
+enum CredentialStatus {
+  ACTIVE
+  ROTATED
+  REVOKED
+}
+
+enum ResourceType {
+  APP
+  WORKER
+  POSTGRES
+  REDIS
+}
+
+enum ResourceStatus {
+  PENDING
+  PROVISIONING
+  ACTIVE
+  FAILED
+  DELETING
+  DELETED
+}
+
+// ─── Identity ───────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?
+  /// Derived from the Paddle subscription by webhook handlers. Never set from user input.
+  plan         Plan     @default(FREE)
+  paddleCustomerId String? @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  adminRole          AdminRole?           @relation("AdminRoleUser")
+  adminRolesGranted  AdminRole[]          @relation("AdminRoleGrantedBy")
+  resources          Resource[]
+  credentialsCreated ProviderCredential[] @relation("CredentialCreatedBy")
+  auditLogs          AuditLog[]
+  subscription       Subscription?
+  billingCheckouts   BillingCheckout[]
+}
+
+model AdminRole {
+  id          String        @id @default(cuid())
+  userId      String        @unique
+  user        User          @relation("AdminRoleUser", fields: [userId], references: [id], onDelete: Cascade)
+  role        AdminRoleType
+  grantedById String?
+  grantedBy   User?         @relation("AdminRoleGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+// ─── Encrypted provider credentials ─────────────────────────────────────────
+
+model ProviderCredential {
+  id       String           @id @default(cuid())
+  provider Provider
+  /// Field key from app/lib/providers.ts, e.g. "apiToken", "orgSlug".
+  field    String
+  version  Int
+  status   CredentialStatus @default(ACTIVE)
+
+  /// AES-256-GCM ciphertext, base64. Set to null when the row is rotated or revoked.
+  ciphertext String?
+  /// 96-bit random IV, base64. A new one for every encryption.
+  iv         String?
+  /// 128-bit GCM auth tag, base64.
+  authTag    String?
+  /// Which HKDF subkey generation encrypted this row (for future master-key rotation).
+  keyVersion Int     @default(1)
+
+  /// Keyed HMAC fingerprint (not reversible), so admins can tell keys apart without seeing them.
+  fingerprint String
+
+  createdById String?
+  createdBy   User?     @relation("CredentialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  rotatedAt   DateTime?
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+
+  @@unique([provider, field, version])
+  @@index([provider, status])
+}
+
+// ─── Tenant resources ───────────────────────────────────────────────────────
+
+model Resource {
+  id       String         @id @default(cuid())
+  ownerId  String
+  owner    User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  type     ResourceType
+  provider Provider
+  name     String
+  region   String
+  size     String
+  status   ResourceStatus @default(PENDING)
+
+  /// ID at the upstream provider (Fly machine ID, Neon project ID, Upstash DB ID).
+  externalId String?
+  config     Json    @default("{}")
+
+  /// Encrypted connection secret for the tenant (DATABASE_URL, REDIS_URL, …).
+  secretCiphertext String?
+  secretIv         String?
+  secretAuthTag    String?
+
+  /// Price we charge, worked out on the server from the catalog. Never sent by the client.
+  monthlyCostCents Int     @default(0)
+  /// Shown to the tenant, so it never contains provider internals.
+  errorMessage     String?
+
+  /// Provisioning lease. A worker owns the row until lockedUntil. A worker that
+  /// crashes loses its lease, and the sweeper picks the row up again.
+  attempts    Int       @default(0)
+  lockedUntil DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Names are unique per owner and type among non-deleted rows only. That's a
+  // partial unique index in the migration SQL, because Prisma can't express one.
+  @@index([ownerId, type, name])
+  @@index([ownerId, status])
+  @@index([status, lockedUntil])
+  @@index([provider, externalId])
+}
+
+// ─── Audit trail ────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  /// Dotted verb, e.g. "provider_credential.rotated", "resource.provision_requested".
+  action     String
+  targetType String
+  targetId   String?
+  /// Never put secret values in here. Fingerprints and versions only.
+  metadata   Json     @default("{}")
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+  @@index([action, createdAt])
+}
+
+// ─── Billing (Paddle) ───────────────────────────────────────────────────────
+
+/// Local mirror of the user's Paddle subscription, refreshed from the Paddle API on every webhook.
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paddleSubscriptionId String             @unique
+  paddleCustomerId     String
+  status               SubscriptionStatus
+  /// The plan the subscription's price maps to, even if status no longer grants it.
+  plan                 Plan
+  priceId              String
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  lastSyncedAt         DateTime
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
+
+/// Every checkout transaction the server creates. subscription.created is mapped to
+/// a user through its transaction_id, not through custom_data, which a browser can forge.
+model BillingCheckout {
+  transactionId String   @id
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan          Plan
+  priceId       String
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// Processed webhook event IDs, for idempotency. Paddle may deliver an event more than once.
+model WebhookEvent {
+  id          String   @id
+  provider    Provider
+  type        String
+  occurredAt  DateTime
+  processedAt DateTime @default(now())
+
+  @@index([provider, processedAt])
+}
