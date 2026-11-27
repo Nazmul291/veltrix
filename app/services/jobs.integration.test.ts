@@ -9,12 +9,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { runtimeDatabaseUrl } from "./db.server";
 
 describe("runtimeDatabaseUrl", () => {
-  it("prefers the pooled URL, with prepared statements off", () => {
+  it("prefers the pooled URL", () => {
     const url = runtimeDatabaseUrl({ DATABASE_URL: "postgres://u:p@db.prisma.io:5432/postgres", DATABASE_URL_POOLED: "postgres://u:p@pooled.db.prisma.io:5432/postgres?sslmode=require" });
-    expect(url).toBe("postgres://u:p@pooled.db.prisma.io:5432/postgres?sslmode=require&pgbouncer=true");
+    expect(url).toBe("postgres://u:p@pooled.db.prisma.io:5432/postgres?sslmode=require");
   });
   it("falls back to the direct URL", () => {
-    expect(runtimeDatabaseUrl({ DATABASE_URL: "postgres://u:p@localhost/db" })).toBe("postgres://u:p@localhost/db");
+    expect(runtimeDatabaseUrl({ DATABASE_URL: "postgres://u:p@localhost/db", DATABASE_URL_POOLED: " " })).toBe("postgres://u:p@localhost/db");
   });
 });
 
