@@ -1,0 +1,4 @@
+# Veltrix: only the sign-in page is public. Everything else needs an account.
+User-agent: *
+Allow: /login
+Disallow: /

@@ -11,7 +11,26 @@ const globalForPrisma = globalThis as unknown as { __prisma?: PrismaClient };
  * direct URL (see schema.prisma and scripts/vercel-migrate.mjs).
  */
 export function runtimeDatabaseUrl(env: Record<string, string | undefined> = process.env): string | undefined {
-  return env.DATABASE_URL_POOLED?.trim() || env.DATABASE_URL;
+  const raw = env.DATABASE_URL_POOLED?.trim() || env.DATABASE_URL;
+  return raw ? withStrictSsl(raw) : raw;
+}
+
+/**
+ * pg currently treats sslmode=prefer|require|verify-ca as verify-full (the
+ * certificate and hostname are checked) and warns that pg 9 will switch to the
+ * weaker libpq meanings. Prisma Postgres URLs use sslmode=require, so asking
+ * for verify-full keeps today's secure behaviour and stops the warning.
+ */
+function withStrictSsl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return raw;
+  }
+  const mode = url.searchParams.get("sslmode");
+  if (mode && ["prefer", "require", "verify-ca"].includes(mode)) url.searchParams.set("sslmode", "verify-full");
+  return url.toString();
 }
 
 /**

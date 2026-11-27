@@ -119,7 +119,7 @@ rm .env.production.local
 
 Vercel functions stop when they finish responding, so there is no always-running sweeper there. Provisioning is driven three ways:
 
-- **Right away:** creating or deleting a resource starts the work with `waitUntil`. It shares the route's 300-second limit, which is the Hobby maximum.
+- **Right away:** creating or deleting a resource starts the work with `waitUntil`. It shares the function's time limit, which is the project's default function duration (300 seconds, the Hobby maximum). Don't add a per-route `export const config` for this. It splits the app into separate functions and breaks Remix's route discovery, which made Sign out, Billing and Admin show 404. A test guards against it.
 - **While the dashboard is open:** it polls every 3 seconds while anything is in progress, and each poll moves that tenant's due retries along.
 - **Backstop:** Vercel Cron calls `/api/cron/sweep` (see `vercel.json`). The schedule is daily (`0 4 * * *`) because Hobby allows only daily crons; a more frequent schedule makes the deploy fail. On Pro, change it to `*/5 * * * *`.
 

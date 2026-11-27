@@ -8,8 +8,8 @@ import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { safeEqual } from "~/services/crypto.server";
 import { sweepOnce } from "~/services/jobs.server";
 
-// Leaves ~60s of headroom under the 300s Hobby maximum for the item already in progress.
-export const config = { maxDuration: 300 };
+// Time limit: the project's default function duration (300s on Vercel Hobby with Fluid compute).
+// Leaves ~60s of headroom for the item already in progress. No per-route `config`, see tests/routes.guard.test.ts.
 const BUDGET_MS = 240_000;
 
 export async function loader({ request }: LoaderFunctionArgs) {
