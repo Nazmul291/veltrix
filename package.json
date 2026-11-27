@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "postinstall": "prisma generate",
     "db:migrate:prod": "node --env-file=.env.production.local node_modules/prisma/build/index.js migrate deploy",
-    "admin:bootstrap:prod": "tsx --env-file=.env.production.local scripts/bootstrap-admin.ts"
+    "admin:bootstrap:prod": "tsx --env-file=.env.production.local scripts/bootstrap-admin.ts",
+    "vercel-build": "remix vite:build && node scripts/vercel-migrate.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

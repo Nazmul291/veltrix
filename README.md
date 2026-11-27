@@ -87,17 +87,27 @@ Veltrix runs on Vercel through the `@vercel/remix` Vite preset (`vite.config.ts`
 
 The integration also adds `DATABASE_POSTGRES_URL` and `DATABASE_PRISMA_DATABASE_URL`. Veltrix doesn't use them.
 
-### First deploy
+### Database migrations
 
-Migrations do **not** run during the Vercel build (Prisma advises against it). Apply them from your machine against the direct production URL, before each deploy that adds a migration:
+Migrations run automatically at the end of every **production** build (`vercel-build` in `package.json` → `scripts/vercel-migrate.mjs`):
+
+- The app is built first. Migrations run only if the build succeeded, and a failed migration fails the deployment, so the previous version stays live.
+- Preview builds skip migrations, because they share the production database.
+- They use the direct `DATABASE_URL` (`db.prisma.io`). The script refuses the pooled URL.
+- Vercel runs the `vercel-build` script only while the project's **Build Command** setting is left at its default (not overridden).
+
+A migration that drops something the live code still uses should be split across two deploys: first stop using it, then drop it. The old deployment keeps serving for a few seconds after the migration runs.
+
+To migrate by hand instead (for example, to check a migration before deploying), pull the env and replace the `"[SENSITIVE]"` placeholder with the direct URL. Vercel never lets anyone download sensitive variables.
 
 ```bash
-npx vercel link
 npx vercel env pull .env.production.local --environment=production
 npm run db:migrate:prod
 ```
 
-Then deploy (push to the production branch). After the first sign-in, create the first admin against production, and delete the pulled secrets file:
+### First admin
+
+After the first production deploy and your first sign-in, run the bootstrap against production. In the pulled `.env.production.local`, set `DATABASE_URL` to the direct URL and remove the `DATABASE_URL_POOLED` placeholder, then:
 
 ```bash
 npm run admin:bootstrap:prod -- --list
