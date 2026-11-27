@@ -8,6 +8,7 @@
  *   the routes can act on. Logs carry the operation, reason, status and error
  *   code only: never codes, API keys or user objects.
  */
+import { Prisma } from "@prisma/client";
 import {
   NazmulCodesAuthClient,
   NazmulCodesAuthError,
@@ -23,7 +24,8 @@ export type CentralAuthReason =
   | "client_suspended" // Veltrix is suspended in the auth admin
   | "invalid_grant" // code wrong, expired, reused, or redirect_uri mismatch
   | "access_denied" // the central user is suspended
-  | "invalid_request";
+  | "invalid_request"
+  | "internal"; // a Veltrix-side failure (e.g. the database), not the auth service
 
 export class CentralAuthError extends Error {
   constructor(
@@ -59,7 +61,10 @@ function classify(err: unknown): CentralAuthError {
   if (err instanceof Error && (err.message.startsWith("NazmulCodesAuthClient") || err instanceof TypeError)) {
     return new CentralAuthError("not_configured", 0, "invalid_config");
   }
-  return new CentralAuthError("unreachable", 0, err instanceof Error ? err.name : "unknown");
+  // Anything else failed inside Veltrix (database, bug), not at the auth service.
+  // Log the Prisma error code when there is one (e.g. P2021: table missing, so migrations weren't run).
+  if (err instanceof Prisma.PrismaClientKnownRequestError) return new CentralAuthError("internal", 0, err.code);
+  return new CentralAuthError("internal", 0, err instanceof Error ? err.name : "unknown");
 }
 
 function log(op: string, e: CentralAuthError) {
