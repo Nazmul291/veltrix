@@ -25,7 +25,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (request.method !== "POST") return reply({ ok: false, formError: "Method not allowed" }, 405);
   assertSameOrigin(request);
-  const user = await requireUser(request);
+  const user = await requireUser(request, { fresh: true });
 
   let body: unknown;
   try {

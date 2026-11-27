@@ -55,4 +55,6 @@ export interface CredentialFieldStatus {
   updatedAt: string | null;
   updatedBy: string | null;
   lastUsedAt: string | null;
+  /** Not set in the database, but an environment fallback provides a value. */
+  fromEnvironment: boolean;
 }

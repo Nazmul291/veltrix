@@ -41,7 +41,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const reply = (data: ProviderCredentialActionData, status = 200) => json(data, { status, headers: noStore });
 
   assertSameOrigin(request);
-  const admin = await requireAdmin(request, "SUPER_ADMIN");
+  const admin = await requireAdmin(request, "SUPER_ADMIN", { fresh: true });
 
   const parsed = providerCredentialMutationSchema.safeParse(Object.fromEntries(await request.formData()));
   if (!parsed.success) {

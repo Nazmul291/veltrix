@@ -1,85 +1,54 @@
-import { json, redirect, type ActionFunctionArgs, type LoaderFunctionArgs, type MetaFunction } from "@remix-run/node";
-import { Link, useSearchParams } from "@remix-run/react";
-import { AuthCard, AuthField, AuthSubmit, FormError } from "~/components/auth/AuthCard";
-import { useLogin } from "~/hooks/useAuth";
-import { loginSchema, safeRedirect, type AuthActionData } from "~/lib/schemas/auth";
-import { getRequestContext } from "~/services/audit.server";
-import { authenticate } from "~/services/auth.server";
-import { clearRateLimit, rateLimit } from "~/services/rate-limit.server";
-import { assertSameOrigin, createUserSession, getUserId } from "~/services/session.server";
+import { json, redirect, type LoaderFunctionArgs, type MetaFunction } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
+import { AuthCard, FormError } from "~/components/auth/AuthCard";
+import { safeRedirect } from "~/lib/safe-redirect";
+import { getUserId } from "~/services/session.server";
 
 export const meta: MetaFunction = () => [{ title: "Sign in · Veltrix" }];
 
+/** Friendly copy only. Details stay in the server log. */
+const ERRORS: Record<string, string> = {
+  unavailable: "Sign-in is temporarily unavailable. Please try again in a few minutes.",
+  state: "That sign-in link expired or was opened in another tab. Please try again.",
+  expired: "That sign-in attempt expired. Please try again.",
+  denied: "Your NazmulCodes account can't access Veltrix right now. Contact support if this seems wrong.",
+  signed_out: "You've been signed out because your account access changed. Sign in again to continue.",
+};
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  if (await getUserId(request)) throw redirect(safeRedirect(new URL(request.url).searchParams.get("redirectTo")));
-  return null;
-}
-
-const GENERIC = "Incorrect email or password.";
-
-export async function action({ request }: ActionFunctionArgs) {
-  assertSameOrigin(request);
-  const reply = (data: AuthActionData, status: number) => json(data, { status });
-
-  const parsed = loginSchema.safeParse(Object.fromEntries(await request.formData()));
-  if (!parsed.success) return reply({ ok: false, fieldErrors: parsed.error.flatten().fieldErrors }, 422);
-
-  const { email, password, redirectTo } = parsed.data;
-  const ctx = getRequestContext(request);
-
-  // Two limits: one per IP (spraying many accounts) and one per email (brute-forcing one account).
-  const ipLimit = rateLimit(`login:ip:${ctx.ipAddress ?? "unknown"}`, 20, 15 * 60_000);
-  const emailLimit = rateLimit(`login:email:${email}`, 8, 15 * 60_000);
-  if (!ipLimit.allowed || !emailLimit.allowed) {
-    const wait = Math.max(ipLimit.retryAfterSec, emailLimit.retryAfterSec);
-    return json<AuthActionData>(
-      { ok: false, formError: `Too many attempts. Try again in ${Math.ceil(wait / 60)} min.` },
-      { status: 429, headers: { "Retry-After": String(wait) } },
-    );
-  }
-
-  const result = await authenticate(email, password, ctx);
-  if (!result.ok) return reply({ ok: false, formError: GENERIC }, 401);
-
-  clearRateLimit(`login:email:${email}`);
-  return createUserSession(result.userId, safeRedirect(redirectTo));
+  const url = new URL(request.url);
+  const returnTo = safeRedirect(url.searchParams.get("returnTo"));
+  if (await getUserId(request)) throw redirect(returnTo);
+  const error = url.searchParams.get("error");
+  return json({ returnTo, error: error && ERRORS[error] ? ERRORS[error] : null }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export default function LoginRoute() {
-  const [params] = useSearchParams();
-  const { login, isSubmitting, fieldErrors, formError } = useLogin();
+  const { returnTo, error } = useLoaderData<typeof loader>();
+  const href = `/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
 
   return (
     <AuthCard
       title="Sign in"
       subtitle="Deploy apps, databases and workers."
-      footer={
-        <>
-          No account?{" "}
-          <Link to="/signup" className="text-zinc-300 underline-offset-4 hover:underline">
-            Create one
-          </Link>
-        </>
-      }
+      footer="Veltrix uses your NazmulCodes account. New here? You can create one on the next screen."
     >
-      <form
-        className="space-y-4"
-        noValidate
-        onSubmit={(e) => {
-          e.preventDefault();
-          const fd = new FormData(e.currentTarget);
-          login({
-            email: String(fd.get("email") ?? ""),
-            password: String(fd.get("password") ?? ""),
-            redirectTo: params.get("redirectTo") ?? undefined,
-          });
-        }}
-      >
-        <FormError message={formError} />
-        <AuthField label="Email" name="email" type="email" autoComplete="email" errors={fieldErrors?.email} />
-        <AuthField label="Password" name="password" type="password" autoComplete="current-password" errors={fieldErrors?.password} />
-        <AuthSubmit busy={isSubmitting}>{isSubmitting ? "Signing in…" : "Sign in"}</AuthSubmit>
-      </form>
+      <div className="space-y-4">
+        <FormError message={error} />
+        {/* A plain link: /auth/login answers with a redirect to another site, so it needs a full page navigation. */}
+        <a
+          href={href}
+          className="flex h-11 w-full items-center justify-center gap-2.5 rounded-md bg-zinc-100 text-sm font-medium text-zinc-950 transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+        >
+          <span aria-hidden className="grid h-5 w-5 place-items-center rounded bg-zinc-950 font-mono text-[11px] font-bold text-zinc-100">
+            N
+          </span>
+          Sign in with NazmulCodes
+        </a>
+        <p className="text-center text-xs text-zinc-500">
+          Your password and two-factor codes stay with NazmulCodes. Veltrix never sees them.
+        </p>
+      </div>
     </AuthCard>
   );
 }

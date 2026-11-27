@@ -11,7 +11,7 @@ const SECRET = "pdl_ntfset_test";
 
 type Call = { method: string; url: string; body: any; headers: Headers };
 const calls: Call[] = [];
-let remote: Record<string, any> = {}; // Paddle's current subscription state, keyed by ID
+const remote: Record<string, any> = {}; // Paddle's current subscription state, keyed by ID
 let apiDown = false;
 
 const res = (status: number, body: unknown) =>

@@ -29,6 +29,7 @@ export type ProvisionAttempt = { ok: true; clientId: string } | { ok: false; rea
 
 export function useProvisionResource() {
   const fetcher = useFetcher<ProvisionActionData>();
+  const submitFetcher = fetcher.submit;
   const store = useResourceStoreApi();
   const addOptimistic = useResourceStore((s) => s.addOptimistic);
   const confirmOptimistic = useResourceStore((s) => s.confirmOptimistic);
@@ -72,13 +73,13 @@ export function useProvisionResource() {
         createdAt: new Date().toISOString(),
       });
 
-      fetcher.submit(
+      submitFetcher(
         { ...parsed.data, clientId },
         { method: "post", action: PROVISION_ACTION, encType: "application/json" },
       );
       return { ok: true, clientId };
     },
-    [store, addOptimistic, fetcher.submit],
+    [store, addOptimistic, submitFetcher],
   );
 
   // Settle the optimistic entry once the action responds.

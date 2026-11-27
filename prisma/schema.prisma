@@ -45,6 +45,7 @@ enum Provider {
   NEON
   UPSTASH
   PADDLE
+  NAZMULCODES
 }
 
 enum CredentialStatus {
@@ -73,9 +74,16 @@ enum ResourceStatus {
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
+  /// Stable user ID from NazmulCodes Auth (central SSO). This, not email, identifies the user.
+  centralUserId String?  @unique
+  /// Copied from the central account on each sign-in. Not unique, and never used to identify a user.
+  email        String
   name         String?
-  passwordHash String?
+  avatarUrl    String?
+  /// Last successful check with NazmulCodes Auth (sign-in or verify-user).
+  centralVerifiedAt DateTime?
+  /// Set when verify-user returns valid=false. Every session of this user is rejected until the next successful sign-in.
+  disabledAt   DateTime?
   /// Derived from the Paddle subscription by webhook handlers. Never set from user input.
   plan         Plan     @default(FREE)
   paddleCustomerId String? @unique
@@ -89,6 +97,8 @@ model User {
   auditLogs          AuditLog[]
   subscription       Subscription?
   billingCheckouts   BillingCheckout[]
+
+  @@index([email])
 }
 
 model AdminRole {

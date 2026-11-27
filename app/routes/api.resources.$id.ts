@@ -20,7 +20,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const reply = (data: ResourceMutationData, status = 200) => json(data, { status, headers: noStore });
 
   assertSameOrigin(request);
-  const user = await requireUser(request);
+  const user = await requireUser(request, { fresh: true });
   const id = params.id ?? "";
 
   const parsed = bodySchema.safeParse(Object.fromEntries(await request.formData()));

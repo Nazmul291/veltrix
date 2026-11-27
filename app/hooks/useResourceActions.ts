@@ -8,12 +8,13 @@ const actionFor = (id: string) => `/api/resources/${id}`;
 /** Delete a resource. The store switches it to DELETING as soon as the server accepts. */
 export function useDeleteResource(resourceId: string) {
   const fetcher = useFetcher<ResourceMutationData>();
+  const submitFetcher = fetcher.submit;
   const upsertResource = useResourceStore((s) => s.upsertResource);
   const removeResource = useResourceStore((s) => s.removeResource);
 
   const remove = useCallback(
-    () => fetcher.submit({ intent: "delete" }, { method: "post", action: actionFor(resourceId) }),
-    [fetcher.submit, resourceId],
+    () => submitFetcher({ intent: "delete" }, { method: "post", action: actionFor(resourceId) }),
+    [submitFetcher, resourceId],
   );
 
   useEffect(() => {
@@ -36,11 +37,12 @@ export function useDeleteResource(resourceId: string) {
  */
 export function useRevealSecret(resourceId: string) {
   const fetcher = useFetcher<ResourceMutationData>();
+  const submitFetcher = fetcher.submit;
   const [secret, setSecret] = useState<string | null>(null);
 
   const reveal = useCallback(
-    () => fetcher.submit({ intent: "reveal" }, { method: "post", action: actionFor(resourceId) }),
-    [fetcher.submit, resourceId],
+    () => submitFetcher({ intent: "reveal" }, { method: "post", action: actionFor(resourceId) }),
+    [submitFetcher, resourceId],
   );
 
   useEffect(() => {
