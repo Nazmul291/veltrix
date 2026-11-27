@@ -369,6 +369,18 @@ describe.skipIf(!DB)("NazmulCodes SSO (integration)", () => {
     expect(logged).not.toContain(ada.email);
   });
 
+  it("a missing table (migrations not run) is logged as internal with its Prisma code, not as the auth service being unreachable", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    // The real production failure: the table doesn't exist, so Prisma throws P2021.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ProviderCredential" RENAME TO "ProviderCredential_hidden"`);
+    try {
+      expect((await call(loginLoader, "/auth/login")).headers.get("location")).toBe("/login?error=unavailable");
+    } finally {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "ProviderCredential_hidden" RENAME TO "ProviderCredential"`);
+    }
+    expect(errors).toHaveBeenCalledWith("[central-auth]", { op: "authorize", reason: "internal", status: 0, code: "P2021" });
+  });
+
   it("access_denied on sign-in shows a friendly denial", async () => {
     const start = await call(loginLoader, "/auth/login");
     const state = new URL(start.headers.get("location")!).searchParams.get("state");
