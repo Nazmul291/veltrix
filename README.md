@@ -30,7 +30,7 @@ npm run dev
 
 Then make yourself the first admin:
 
-1. Open the app and sign in with NazmulCodes. This creates your Veltrix user.
+1. Open the app, click **Get started** (or go to `/dashboard`) and sign in with NazmulCodes. This creates your Veltrix user.
 2. Run `npm run admin:bootstrap -- --list` to find your central user ID.
 3. Run `npm run admin:bootstrap -- --central-id <id>`, check the details it prints, and confirm.
 
@@ -131,6 +131,19 @@ The Prisma Postgres variables are currently shared by Production **and** Preview
 
 Sign-in on previews fails unless each preview URL's `/auth/callback` is registered in the auth admin.
 
+## URL layout
+
+| Area | Paths | Access |
+| --- | --- | --- |
+| Public | `/` (marketing), `/login`, `/auth/*`, `/webhooks/paddle`, `/api/cron/sweep` | Anyone. The webhook and cron routes check their own signatures and secrets |
+| Customer | `/dashboard` (resources), `/dashboard/billing` | Signed in |
+| Admin | `/admin/providers` (`/admin` redirects there) | Admin role. Others get a 404 |
+
+- After sign-in, users land on `/dashboard`, or on the page they were trying to open. Sign out returns to `/`.
+- The old `/billing` URL redirects permanently to `/dashboard/billing`.
+- `dashboard.tsx` and `admin.tsx` are layouts (shared header), but **every protected route also checks access in its own loader or action**. In Remix, a child route's data can be fetched directly, without the layout's loader. `tests/routes.guard.test.ts` fails if a route isn't on the public list and doesn't call `requireUser`/`requireAdmin`.
+- Shared paths live in `app/lib/paths.ts`.
+
 ## Tests
 
 ```bash
@@ -148,7 +161,7 @@ TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/veltrix_test" n
 | Path | What's there |
 | --- | --- |
 | `app/services/*.server.ts` | Server-only: crypto, credentials, provider clients (`fly`, `neon`, `upstash`, `paddle`), provisioner, billing, auth |
-| `app/routes/` | Remix routes: dashboard (`_index`), `billing`, `admin.providers`, `api.resources*`, `webhooks.paddle`, auth |
+| `app/routes/` | Remix routes. See [URL layout](#url-layout) |
 | `app/hooks/` | All client mutations (each wraps `useFetcher`) |
 | `app/store/` | Zustand resource store (one per request, so tenants never share SSR state) |
 | `app/lib/` | Client-safe shared code: plans, quota maths, zod schemas, provider registry |

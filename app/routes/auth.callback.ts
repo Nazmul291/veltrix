@@ -9,6 +9,7 @@
  * once, then shows an error.
  */
 import { redirect, type LoaderFunctionArgs } from "@remix-run/node";
+import { AFTER_SIGN_IN } from "~/lib/paths";
 import { safeRedirect } from "~/lib/safe-redirect";
 import { getRequestContext } from "~/services/audit.server";
 import { upsertCentralUser } from "~/services/auth.server";
@@ -46,7 +47,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (typeof expected !== "string") {
     // No login is pending: the exact callback URL was reused (back button or reload).
-    if (await getUserId(request)) return redirect("/"); // already signed in: no second exchange
+    if (await getUserId(request)) return redirect(AFTER_SIGN_IN); // already signed in: no second exchange
     // No cookie at all means cookies are blocked. Restarting would loop forever.
     if (!request.headers.get("Cookie")?.includes("__vx_session=")) return toLogin("state");
     return restartOnce();

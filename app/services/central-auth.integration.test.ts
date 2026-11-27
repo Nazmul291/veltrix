@@ -4,6 +4,7 @@
  * Skipped unless TEST_DATABASE_URL is set. It TRUNCATEs every table.
  */
 import { randomBytes } from "node:crypto";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const DB = process.env.TEST_DATABASE_URL;
@@ -92,7 +93,7 @@ describe.skipIf(!DB)("NazmulCodes SSO (integration)", () => {
   let resetClient: () => void;
   let invalidateCreds: () => void;
 
-  const call = (fn: typeof loginLoader, path: string, cookie?: string | null) =>
+  const call = (fn: (args: LoaderFunctionArgs) => unknown, path: string, cookie?: string | null) =>
     fn({ request: new Request(`${ORIGIN}${path}`, { headers: cookie ? { Cookie: cookie } : {} }), params: {}, context: {} }) as Promise<Response>;
 
   /** /auth/login → the authorize URL (the fake auth site signs the user in) → /auth/callback. */
@@ -251,15 +252,15 @@ describe.skipIf(!DB)("NazmulCodes SSO (integration)", () => {
     const signedIn = cookieFrom(await call(callbackLoader, callbackUrl, cookieFrom(start)))!;
     fake.calls.length = 0;
 
-    // Reloaded while signed in: straight to the app, with no token call.
-    expect((await call(callbackLoader, callbackUrl, signedIn)).headers.get("location")).toBe("/");
+    // Reloaded while signed in: straight to the dashboard, with no token call.
+    expect((await call(callbackLoader, callbackUrl, signedIn)).headers.get("location")).toBe("/dashboard");
     expect(fake.calls).toHaveLength(0);
 
     // Not signed in, with a session cookie but no pending login: restart once, then give up.
     const other = await call(loginLoader, "/auth/login");
     const noPending = cookieFrom(await call(callbackLoader, `/auth/callback?code=x&state=wrong-state-value-0000000`, cookieFrom(other)))!;
     const restart = await call(callbackLoader, callbackUrl, noPending);
-    expect(restart.headers.get("location")).toBe("/auth/login?returnTo=%2F");
+    expect(restart.headers.get("location")).toBe("/auth/login?returnTo=%2Fdashboard");
     expect((await call(callbackLoader, callbackUrl, cookieFrom(restart))).headers.get("location")).toBe("/login?error=expired");
 
     // No cookie at all (cookies blocked): an error, never a redirect loop.
@@ -276,7 +277,7 @@ describe.skipIf(!DB)("NazmulCodes SSO (integration)", () => {
     expect((await signIn(ada, returnTo)).response.headers.get("location")).toBe("/billing?tab=plans");
 
     for (const evil of ["//evil.com", "https://evil.com", "/\\evil.com", "/%0d%0aSet-Cookie:x"]) {
-      expect((await signIn(ada, evil)).response.headers.get("location")).toBe(evil.startsWith("/%") ? "/%0d%0aSet-Cookie:x" : "/");
+      expect((await signIn(ada, evil)).response.headers.get("location")).toBe(evil.startsWith("/%") ? "/%0d%0aSet-Cookie:x" : "/dashboard");
     }
   });
 
@@ -390,7 +391,28 @@ describe.skipIf(!DB)("NazmulCodes SSO (integration)", () => {
     expect(back.headers.get("location")).toBe("/login?error=denied");
   });
 
-  it("logout ends only the Veltrix session and makes no call to the auth service", async () => {
+  it("the homepage is public (no SSO redirect), while /dashboard and /admin require sign-in", async () => {
+    const { loader: homeLoader } = await import("~/routes/_index");
+    const { loader: dashboardLayout } = await import("~/routes/dashboard");
+    const { loader: adminLayout } = await import("~/routes/admin");
+    fake.calls.length = 0;
+
+    const signedOutHome = await call(homeLoader, "/");
+    expect(signedOutHome.status).toBe(200);
+    expect(await signedOutHome.json()).toEqual({ signedIn: false });
+
+    const toLogin = await thrown(call(dashboardLayout, "/dashboard/billing?x=1"));
+    expect(toLogin.headers.get("location")).toBe("/auth/login?returnTo=%2Fdashboard%2Fbilling%3Fx%3D1");
+    expect((await thrown(call(adminLayout, "/admin/providers"))).headers.get("location")).toBe("/auth/login?returnTo=%2Fadmin%2Fproviders");
+
+    const { cookie } = await signIn(ada);
+    expect(await (await call(homeLoader, "/", cookie)).json()).toEqual({ signedIn: true });
+    // Signed in but not an admin: the admin area answers 404, so it doesn't reveal that it exists.
+    expect((await thrown(call(adminLayout, "/admin/providers", cookie))).status).toBe(404);
+    expect(fake.calls.filter((c) => c.path !== "/api/v1/client-info" && c.path !== "/api/v1/token")).toHaveLength(0);
+  });
+
+  it("logout ends only the Veltrix session, lands on the public homepage, and makes no call to the auth service", async () => {
     const { cookie } = await signIn(ada);
     fake.calls.length = 0;
     const res = (await logoutAction({
@@ -398,7 +420,7 @@ describe.skipIf(!DB)("NazmulCodes SSO (integration)", () => {
       params: {},
       context: {},
     })) as Response;
-    expect(res.headers.get("location")).toBe("/login");
+    expect(res.headers.get("location")).toBe("/");
     expect(cookieFrom(res)).toBeNull();
     expect(fake.calls).toHaveLength(0);
   });
