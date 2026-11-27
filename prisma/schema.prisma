@@ -10,7 +10,9 @@
 //   authenticated data, so swapping ciphertext between rows makes decryption fail.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" for local development. Vercel Functions run on Amazon Linux 2023 (OpenSSL 3).
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {

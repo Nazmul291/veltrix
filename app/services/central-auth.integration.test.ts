@@ -152,6 +152,8 @@ describe.skipIf(!DB)("NazmulCodes SSO (integration)", () => {
   });
 
   afterAll(async () => {
+    // process.env is shared by test files that run in the same worker.
+    for (const k of ["NAZMULCODES_AUTH_URL", "NAZMULCODES_AUTH_API_KEY", "NAZMULCODES_AUTH_REDIRECT_URI", "NAZMULCODES_AUTH_CLIENT_ID"]) delete process.env[k];
     vi.unstubAllGlobals();
     await prisma?.$disconnect();
   });

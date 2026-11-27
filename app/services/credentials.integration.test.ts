@@ -12,11 +12,16 @@ describe.skipIf(!DB)("provider credentials with environment fallback", () => {
   let prisma: typeof import("./db.server").prisma;
   let actorId: string;
 
+  const ENV_KEYS = ["NAZMULCODES_AUTH_API_KEY", "NAZMULCODES_AUTH_REDIRECT_URI", "NAZMULCODES_AUTH_URL", "NAZMULCODES_AUTH_CLIENT_ID"];
+
   beforeAll(async () => {
     process.env.DATABASE_URL = DB;
     process.env.MASTER_ENCRYPTION_KEY = randomBytes(32).toString("hex");
     cred = await import("./credentials.server");
     ({ prisma } = await import("./db.server"));
+    // Start clean. This runs after the imports on purpose: Prisma Client loads the
+    // project's .env into process.env, and an earlier test file may have left values behind.
+    for (const k of ENV_KEYS) delete process.env[k];
     await prisma.$executeRawUnsafe(
       `TRUNCATE "WebhookEvent","BillingCheckout","Subscription","AuditLog","Resource","ProviderCredential","AdminRole","User" CASCADE`,
     );
@@ -24,7 +29,7 @@ describe.skipIf(!DB)("provider credentials with environment fallback", () => {
   });
 
   afterAll(async () => {
-    for (const k of ["NAZMULCODES_AUTH_API_KEY", "NAZMULCODES_AUTH_REDIRECT_URI", "NAZMULCODES_AUTH_URL", "NAZMULCODES_AUTH_CLIENT_ID"]) delete process.env[k];
+    for (const k of ENV_KEYS) delete process.env[k];
     await prisma?.$disconnect();
   });
 

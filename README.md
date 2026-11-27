@@ -70,6 +70,57 @@ Use `NAZMULCODES_AUTH_REDIRECT_URI="http://localhost:5173/auth/callback"`, which
 - Logout ends only the Veltrix session. The user stays signed in at auth.nazmulcodes.org.
 - The SDK in `app/lib/nazmulcodes-auth.server.ts` is the official file from `/admin/docs/sdk`. Don't edit it; replace it with a newer download instead.
 
+## Deploying to Vercel
+
+Veltrix runs on Vercel through the `@vercel/remix` Vite preset (`vite.config.ts`), on Node 24 (`engines` in `package.json`).
+
+### Environment variables (Vercel → Settings → Environment Variables)
+
+| Variable | Notes |
+| --- | --- |
+| `DATABASE_URL` | Direct Prisma Postgres URL (`db.prisma.io`). Used for migrations, and as the fallback at runtime. Added by the Prisma Postgres integration. |
+| `DATABASE_URL_POOLED` | Pooled URL (`pooled.db.prisma.io`). Used by functions at runtime, so serverless instances don't exhaust connections. Added by the integration. |
+| `MASTER_ENCRYPTION_KEY` | `openssl rand -hex 32`. Never change it once data is encrypted, and keep a backup. |
+| `CRON_SECRET` | Any long random string (`openssl rand -hex 32`). Vercel sends it to `/api/cron/sweep`. Without it the cron endpoint refuses to run. |
+| `NAZMULCODES_AUTH_API_KEY` | Needed for the very first sign-in. Can move to Admin → Providers afterwards. |
+| `NAZMULCODES_AUTH_REDIRECT_URI` | `https://<production-domain>/auth/callback`, registered in the auth admin exactly. |
+
+The integration also adds `DATABASE_POSTGRES_URL` and `DATABASE_PRISMA_DATABASE_URL`. Veltrix doesn't use them.
+
+### First deploy
+
+Migrations do **not** run during the Vercel build (Prisma advises against it). Apply them from your machine against the direct production URL, before each deploy that adds a migration:
+
+```bash
+npx vercel link
+npx vercel env pull .env.production.local --environment=production
+npm run db:migrate:prod
+```
+
+Then deploy (push to the production branch). After the first sign-in, create the first admin against production, and delete the pulled secrets file:
+
+```bash
+npm run admin:bootstrap:prod -- --list
+npm run admin:bootstrap:prod -- --central-id <id>
+rm .env.production.local
+```
+
+### Background jobs on serverless
+
+Vercel functions stop when they finish responding, so there is no always-running sweeper there. Provisioning is driven three ways:
+
+- **Right away:** creating or deleting a resource starts the work with `waitUntil`. It shares the route's 300-second limit, which is the Hobby maximum.
+- **While the dashboard is open:** it polls every 3 seconds while anything is in progress, and each poll moves that tenant's due retries along.
+- **Backstop:** Vercel Cron calls `/api/cron/sweep` (see `vercel.json`). The schedule is daily (`0 4 * * *`) because Hobby allows only daily crons; a more frequent schedule makes the deploy fail. On Pro, change it to `*/5 * * * *`.
+
+Crons run only on production deployments.
+
+### Preview deployments
+
+The Prisma Postgres variables are currently shared by Production **and** Preview, so preview deployments read and write the production database. They also use the production provider keys, so a preview can create real infrastructure. Give Preview its own database (and test keys), or remove the Preview scope from these variables.
+
+Sign-in on previews fails unless each preview URL's `/auth/callback` is registered in the auth admin.
+
 ## Tests
 
 ```bash

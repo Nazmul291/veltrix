@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import { vitePlugin as remix } from "@remix-run/dev";
+import { vercelPreset } from "@vercel/remix/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
@@ -9,6 +10,8 @@ export default defineConfig({
     tailwindcss(),
     !process.env.VITEST &&
       remix({
+        // Builds Vercel Functions output when deployed on Vercel. Locally it changes nothing.
+        presets: [vercelPreset()],
         future: {
           v3_fetcherPersist: true,
           v3_relativeSplatPath: true,
