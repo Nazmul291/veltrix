@@ -40,7 +40,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const reply = (data: BillingActionData, status = 200) => json(data, { status, headers: noStore });
 
   assertSameOrigin(request);
-  const user = await requireUser(request);
+  const user = await requireUser(request, { fresh: true });
   const parsed = billingMutationSchema.safeParse(Object.fromEntries(await request.formData()));
   if (!parsed.success) return reply({ ok: false, error: "Invalid request" }, 422);
 

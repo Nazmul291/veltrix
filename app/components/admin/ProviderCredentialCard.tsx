@@ -12,8 +12,9 @@ export function ProviderCredentialCard({ provider, fields, canEdit }: Props) {
   const def = PROVIDER_REGISTRY[provider];
   const byKey = new Map(fields.map((f) => [f.field, f]));
   const required = def.fields.filter((f) => f.required);
-  const ready = required.every((f) => byKey.get(f.key)?.configured);
-  const partial = !ready && def.fields.some((f) => byKey.get(f.key)?.configured);
+  const isSet = (k: string) => Boolean(byKey.get(k)?.configured || byKey.get(k)?.fromEnvironment);
+  const ready = required.every((f) => isSet(f.key));
+  const partial = !ready && def.fields.some((f) => isSet(f.key));
 
   const badge = ready
     ? { text: "Ready", cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" }
@@ -47,6 +48,7 @@ export function ProviderCredentialCard({ provider, fields, canEdit }: Props) {
                 updatedAt: null,
                 updatedBy: null,
                 lastUsedAt: null,
+                fromEnvironment: false,
               }
             }
           />

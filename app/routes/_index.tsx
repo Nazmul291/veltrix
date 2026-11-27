@@ -6,14 +6,20 @@ import { CreateResourcePanel } from "~/components/dashboard/CreateResourcePanel"
 import { QuotaPanel } from "~/components/dashboard/QuotaPanel";
 import { ResourceList } from "~/components/dashboard/ResourceList";
 import { useResourceStatusPolling } from "~/hooks/useResourceActions";
+import { kickTenantJobs } from "~/services/jobs.server";
 import { listTenantResources } from "~/services/resources.server";
 import { requireUser } from "~/services/session.server";
 import { ResourceStoreProvider, type ResourceStoreInit } from "~/store/useResourceStore";
+
+// Background provisioning started from this loader shares its time limit. 300s is the Vercel Hobby maximum.
+export const config = { maxDuration: 300 };
 
 export const meta: MetaFunction = () => [{ title: "Dashboard · Veltrix" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
+  // The dashboard re-runs this loader every 3s while anything is in progress. Each run moves due retries along.
+  await kickTenantJobs(user.id);
   const store: ResourceStoreInit = { plan: user.plan, resources: await listTenantResources(user.id) };
   return json(
     { user: { email: user.email, adminRole: user.adminRole?.role ?? null }, store },

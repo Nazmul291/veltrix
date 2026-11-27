@@ -1,56 +1,47 @@
+import type { VerifiedCentralUser } from "~/lib/nazmulcodes-auth.server";
 import { writeAuditLog, type RequestContext } from "./audit.server";
 import { isUniqueViolation } from "./credentials.server";
 import { prisma } from "./db.server";
-import { getDummyHash, hashPassword, needsRehash, verifyPassword } from "./password.server";
-
-export type AuthResult = { ok: true; userId: string } | { ok: false };
 
 /**
- * Checks an email and password. An unknown email, a user without a password,
- * and a wrong password all take the same scrypt time and return the same { ok: false },
- * so the result never reveals which emails have accounts.
+ * Creates or updates the local user for a verified central user. The match is
+ * by centralUserId only, never by email: central sign-ups can have unverified
+ * emails, so matching on email would let someone take over an account.
+ * A successful sign-in also clears disabledAt (e.g. after the user reconnects Veltrix).
  */
-export async function authenticate(email: string, password: string, ctx: RequestContext): Promise<AuthResult> {
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, passwordHash: true } });
-  const valid = await verifyPassword(password, user?.passwordHash ?? (await getDummyHash()));
+export async function upsertCentralUser(central: VerifiedCentralUser, ctx: RequestContext) {
+  const profile = { email: central.email, name: central.name, avatarUrl: central.avatarUrl };
+  const now = new Date();
 
-  if (!user || !user.passwordHash || !valid) {
-    await writeAuditLog(prisma, {
-      actorId: user?.id ?? null,
-      action: "user.login_failed",
-      targetType: "User",
-      targetId: user?.id ?? null,
-      // Record the attempted email only when an account exists, so typos and other people's addresses aren't stored.
-      metadata: user ? { email } : {},
-      context: ctx,
-    });
-    return { ok: false };
-  }
-
-  if (needsRehash(user.passwordHash)) {
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(password) } });
-  }
-
-  await writeAuditLog(prisma, { actorId: user.id, action: "user.login", targetType: "User", targetId: user.id, context: ctx });
-  return { ok: true, userId: user.id };
-}
-
-export type RegisterResult = { ok: true; userId: string } | { ok: false; reason: "email_taken" };
-
-export async function registerUser(
-  input: { email: string; password: string; name?: string },
-  ctx: RequestContext,
-): Promise<RegisterResult> {
-  const passwordHash = await hashPassword(input.password);
-  try {
-    const user = await prisma.user.create({
-      data: { email: input.email, name: input.name || null, passwordHash },
+  const attempt = async () => {
+    const existing = await prisma.user.findUnique({ where: { centralUserId: central.id }, select: { id: true } });
+    if (existing) {
+      await prisma.user.update({ where: { id: existing.id }, data: { ...profile, centralVerifiedAt: now, disabledAt: null } });
+      return { id: existing.id, created: false };
+    }
+    const created = await prisma.user.create({
+      data: { centralUserId: central.id, ...profile, centralVerifiedAt: now },
       select: { id: true },
     });
-    await writeAuditLog(prisma, { actorId: user.id, action: "user.signup", targetType: "User", targetId: user.id, context: ctx });
-    return { ok: true, userId: user.id };
+    return { id: created.id, created: true };
+  };
+
+  let result: { id: string; created: boolean };
+  try {
+    result = await attempt();
   } catch (err) {
-    if (isUniqueViolation(err)) return { ok: false, reason: "email_taken" };
-    throw err;
+    // Two callbacks for the same new user at once: the other one created the user first.
+    if (!isUniqueViolation(err)) throw err;
+    result = await attempt();
   }
+
+  await writeAuditLog(prisma, {
+    actorId: result.id,
+    action: result.created ? "user.signup" : "user.login",
+    targetType: "User",
+    targetId: result.id,
+    metadata: { via: "nazmulcodes", twoFactor: central.twoFactorEnabled },
+    context: ctx,
+  });
+  return result;
 }

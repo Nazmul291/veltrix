@@ -7,7 +7,8 @@ import * as isbotModule from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 import { startSweeper } from "./services/jobs.server";
 
-// Runs once when the server module loads: picks up provisioning work left by retries or crashed processes.
+// Long-running servers only (it skips itself on Vercel, where Vercel Cron and kickTenantJobs do this):
+// picks up provisioning work left by retries or crashed processes.
 startSweeper();
 
 const ABORT_DELAY = 5_000;
@@ -17,9 +18,9 @@ export default function handleRequest(
   responseStatusCode: number,
   responseHeaders: Headers,
   remixContext: EntryContext,
-  loadContext: AppLoadContext
+  _loadContext: AppLoadContext
 ) {
-  let prohibitOutOfOrderStreaming =
+  const prohibitOutOfOrderStreaming =
     isBotRequest(request.headers.get("user-agent")) || remixContext.isSpaMode;
 
   return prohibitOutOfOrderStreaming

@@ -14,6 +14,7 @@ export const ADMIN_PROVIDERS_ACTION = "/admin/providers";
  */
 export function useProviderCredentialMutation(provider: ProviderId, field: string) {
   const fetcher = useFetcher<ProviderCredentialActionData>();
+  const submitFetcher = fetcher.submit;
   const [clientError, setClientError] = useState<string | null>(null);
 
   const submit = useCallback(
@@ -24,10 +25,10 @@ export function useProviderCredentialMutation(provider: ProviderId, field: strin
         return false;
       }
       setClientError(null);
-      fetcher.submit(parsed.data, { method: "post", action: ADMIN_PROVIDERS_ACTION });
+      submitFetcher(parsed.data, { method: "post", action: ADMIN_PROVIDERS_ACTION });
       return true;
     },
-    [fetcher.submit],
+    [submitFetcher],
   );
 
   const save = useCallback(

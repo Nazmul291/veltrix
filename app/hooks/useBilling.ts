@@ -62,6 +62,7 @@ function loadPaddle(config: PaddleClientConfig): Promise<PaddleJs> {
 
 export function useBilling(paddle: PaddleClientConfig | null, currentPlan: PlanId) {
   const fetcher = useFetcher<BillingActionData>();
+  const submitFetcher = fetcher.submit;
   const { revalidate } = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
@@ -72,9 +73,9 @@ export function useBilling(paddle: PaddleClientConfig | null, currentPlan: PlanI
       const parsed = billingMutationSchema.safeParse(m);
       if (!parsed.success) return setError("Invalid request");
       setError(null);
-      fetcher.submit(parsed.data, { method: "post", action: "/billing" });
+      submitFetcher(parsed.data, { method: "post", action: "/billing" });
     },
-    [fetcher.submit],
+    [submitFetcher],
   );
 
   // React to action results.

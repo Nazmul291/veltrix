@@ -7,7 +7,7 @@
  * only ever get `listProviderCredentialStatus()` metadata.
  */
 import { Prisma } from "@prisma/client";
-import { getProviderFields, type ProviderId, type ProviderSecrets } from "~/lib/providers";
+import { PROVIDERS, getProviderFields, type ProviderId, type ProviderSecrets } from "~/lib/providers";
 import type { CredentialFieldStatus } from "~/lib/schemas/provider-credential";
 import { writeAuditLog, type RequestContext } from "./audit.server";
 import { DecryptionError, decrypt, encrypt, fingerprint } from "./crypto.server";
@@ -74,6 +74,14 @@ export async function getProviderCredentials<P extends ProviderId>(provider: P):
       if (err instanceof DecryptionError) throw new CredentialIntegrityError(provider, row.field, row.version);
       throw err;
     }
+  }
+
+  // The database wins. Environment fallbacks and defaults only fill gaps (bootstrap config).
+  for (const f of getProviderFields(provider)) {
+    if (secrets[f.key]) continue;
+    const fromEnv = f.envFallback ? process.env[f.envFallback]?.trim() : undefined;
+    if (fromEnv) secrets[f.key] = fromEnv;
+    else if (f.defaultValue) secrets[f.key] = f.defaultValue;
   }
 
   const missing = getProviderFields(provider)
@@ -220,10 +228,8 @@ export async function listProviderCredentialStatus(): Promise<Record<ProviderId,
   });
 
   const byKey = new Map(rows.map((r) => [`${r.provider}:${r.field}`, r]));
-  const providers = ["FLY", "NEON", "UPSTASH", "PADDLE"] as const satisfies readonly ProviderId[];
-
   return Object.fromEntries(
-    providers.map((p) => [
+    PROVIDERS.map((p) => [
       p,
       getProviderFields(p).map((f): CredentialFieldStatus => {
         const row = byKey.get(`${p}:${f.key}`);
@@ -235,6 +241,7 @@ export async function listProviderCredentialStatus(): Promise<Record<ProviderId,
           updatedAt: row?.createdAt.toISOString() ?? null,
           updatedBy: row?.createdBy?.email ?? null,
           lastUsedAt: row?.lastUsedAt?.toISOString() ?? null,
+          fromEnvironment: !row && Boolean(f.envFallback && process.env[f.envFallback]?.trim()),
         };
       }),
     ]),

@@ -9,14 +9,19 @@ import { provisionRequestSchema, type ProvisionActionData } from "~/lib/schemas/
 import { getRequestContext, writeAuditLog } from "~/services/audit.server";
 import { isUniqueViolation } from "~/services/credentials.server";
 import { prisma } from "~/services/db.server";
-import { enqueueProvision } from "~/services/jobs.server";
+import { enqueueProvision, kickTenantJobs } from "~/services/jobs.server";
 import { listTenantResources, toResourceDTO } from "~/services/resources.server";
 import { assertSameOrigin, requireUser } from "~/services/session.server";
 
 const noStore = { "Cache-Control": "no-store" };
 
+// Background provisioning started here (waitUntil) shares this function's time limit. 300s is the Vercel Hobby maximum.
+export const config = { maxDuration: 300 };
+
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
+  await kickTenantJobs(user.id);
   return json({ plan: user.plan, resources: await listTenantResources(user.id) }, { headers: noStore });
 }
 
@@ -25,7 +30,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (request.method !== "POST") return reply({ ok: false, formError: "Method not allowed" }, 405);
   assertSameOrigin(request);
-  const user = await requireUser(request);
+  const user = await requireUser(request, { fresh: true });
 
   let body: unknown;
   try {

@@ -134,6 +134,14 @@ export function CredentialFieldRow({ provider, def, status, canEdit }: Props) {
 }
 
 function StatusLine({ status }: { status: CredentialFieldStatus }) {
+  if (!status.configured && status.fromEnvironment) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-sky-300/90">
+        <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+        From environment variable. Saving a value here overrides it.
+      </div>
+    );
+  }
   if (!status.configured) {
     return (
       <div className="flex items-center gap-2 text-xs text-zinc-500">

@@ -1,8 +1,10 @@
 import { z } from "zod";
 
 /**
- * The only two environment variables Veltrix reads.
- * Every provider key lives encrypted in the database.
+ * The two required environment variables. Every provider key lives encrypted
+ * in the database. The one exception is the optional NAZMULCODES_AUTH_*
+ * fallbacks (see app/lib/providers.ts), because sign-in has to work before an
+ * admin can enter settings.
  */
 const envSchema = z.object({
   DATABASE_URL: z.string().url(),

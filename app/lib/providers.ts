@@ -3,7 +3,7 @@
  * The admin UI, the zod schemas and credentials.server.ts all share it.
  */
 
-export const PROVIDERS = ["FLY", "NEON", "UPSTASH", "PADDLE"] as const;
+export const PROVIDERS = ["FLY", "NEON", "UPSTASH", "PADDLE", "NAZMULCODES"] as const;
 export type ProviderId = (typeof PROVIDERS)[number];
 
 export interface ProviderFieldDef {
@@ -15,6 +15,13 @@ export interface ProviderFieldDef {
   readonly options?: readonly string[];
   /** Public by design (e.g. Paddle client token, price IDs): may be sent to the browser. */
   readonly public?: boolean;
+  /**
+   * Environment variable read when the field isn't set in the database.
+   * Only for bootstrap config that must exist before an admin can sign in.
+   */
+  readonly envFallback?: string;
+  /** Used when neither the database nor the environment has a value. */
+  readonly defaultValue?: string;
 }
 
 export interface ProviderDef {
@@ -70,6 +77,44 @@ export const PROVIDER_REGISTRY = {
       },
       { key: "priceIdPro", label: "Pro price ID", hint: "pri_… monthly price for the Pro plan", required: true, public: true },
       { key: "priceIdTeam", label: "Team price ID", hint: "pri_… monthly price for the Team plan", required: true, public: true },
+    ],
+  },
+  NAZMULCODES: {
+    name: "NazmulCodes Auth",
+    description: "Central sign-in (SSO) for Veltrix users",
+    fields: [
+      {
+        key: "apiKey",
+        label: "API key",
+        hint: "nc_live_… from the auth admin. Falls back to NAZMULCODES_AUTH_API_KEY.",
+        required: true,
+        envFallback: "NAZMULCODES_AUTH_API_KEY",
+      },
+      {
+        key: "redirectUri",
+        label: "Callback URL",
+        hint: "Must exactly match a registered callback, e.g. https://<domain>/auth/callback",
+        required: true,
+        public: true,
+        envFallback: "NAZMULCODES_AUTH_REDIRECT_URI",
+      },
+      {
+        key: "authUrl",
+        label: "Auth service URL",
+        hint: "Defaults to https://auth.nazmulcodes.org",
+        required: false,
+        public: true,
+        envFallback: "NAZMULCODES_AUTH_URL",
+        defaultValue: "https://auth.nazmulcodes.org",
+      },
+      {
+        key: "clientId",
+        label: "Client ID",
+        hint: "e.g. veltrix. If empty, it's looked up with the API key.",
+        required: false,
+        public: true,
+        envFallback: "NAZMULCODES_AUTH_CLIENT_ID",
+      },
     ],
   },
 } as const satisfies Record<ProviderId, ProviderDef>;

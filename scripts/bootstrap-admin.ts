@@ -1,72 +1,65 @@
 /**
- * Creates the first SUPER_ADMIN. CLI only: no web setup page exists, so there's
- * no window where someone else could claim the instance first.
+ * Promotes a user to SUPER_ADMIN. CLI only: no web setup page exists.
  *
- *   npm run admin:bootstrap -- --email you@company.com
+ * Users sign in with NazmulCodes Auth, so this works by the central user ID,
+ * never by email. Central sign-ups can have unverified emails, so promoting
+ * by email could hand admin to someone who registered your address first.
  *
- * - The password is prompted without echo, or read from stdin when piped
- *   (for CI and `fly ssh console`). It's never taken as an argument, because
- *   arguments end up in shell history and `ps`.
- * - If the email already has an account, the user is promoted and their password is kept.
- * - Refuses to run once a SUPER_ADMIN exists, unless you pass --force.
- *   Add further admins from the admin panel, not with this script.
+ *   1. Sign in to Veltrix once with NazmulCodes.
+ *   2. npm run admin:bootstrap -- --list                  (find your central ID)
+ *   3. npm run admin:bootstrap -- --central-id <id>       (confirm and promote)
+ *
+ * Refuses to run once a SUPER_ADMIN exists, unless you pass --force.
+ * In non-interactive shells, pass --yes to skip the confirmation.
  */
+import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
-import { emailSchema, newPasswordSchema } from "~/lib/schemas/auth";
 import { writeAuditLog } from "~/services/audit.server";
 import { prisma } from "~/services/db.server";
-import { hashPassword } from "~/services/password.server";
 
 const CLI_CONTEXT = { ipAddress: null, userAgent: "cli:bootstrap-admin" };
 
-function promptHidden(question: string): Promise<string> {
-  const { stdin, stdout } = process;
-  return new Promise((resolve, reject) => {
-    let buf = "";
-    stdout.write(question);
-    stdin.setRawMode(true);
-    stdin.setEncoding("utf8");
-    stdin.resume();
+async function confirm(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return /^y(es)?$/i.test((await rl.question(question)).trim());
+  } finally {
+    rl.close();
+  }
+}
 
-    const cleanup = () => {
-      stdin.off("data", onData);
-      stdin.setRawMode(false);
-      stdin.pause();
-      stdout.write("\n");
-    };
-    const onData = (chunk: string) => {
-      for (const c of chunk) {
-        if (c === "\r" || c === "\n" || c === "\u0004") return (cleanup(), resolve(buf));
-        if (c === "\u0003") return (cleanup(), reject(new Error("Aborted")));
-        if (c === "\u007f" || c === "\b") buf = buf.slice(0, -1);
-        else buf += c;
-      }
-    };
-    stdin.on("data", onData);
+async function list() {
+  const users = await prisma.user.findMany({
+    where: { centralUserId: { not: null } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { centralUserId: true, email: true, createdAt: true, adminRole: { select: { role: true } } },
   });
-}
-
-async function readPiped(): Promise<string> {
-  let data = "";
-  for await (const chunk of process.stdin) data += chunk;
-  return data.split(/\r?\n/)[0] ?? "";
-}
-
-async function askNewPassword(): Promise<string> {
-  if (!process.stdin.isTTY) return readPiped();
-  const first = await promptHidden("New password (min 12 chars): ");
-  const second = await promptHidden("Repeat password: ");
-  if (first !== second) throw new Error("Passwords do not match.");
-  return first;
+  if (users.length === 0) {
+    console.log("No users yet. Sign in to Veltrix once with NazmulCodes, then run this again.");
+    return;
+  }
+  console.log("Most recent users (newest first):\n");
+  for (const u of users) {
+    console.log(`  ${u.centralUserId}  ${u.createdAt.toISOString().slice(0, 16)}Z  ${u.email}${u.adminRole ? `  [${u.adminRole.role}]` : ""}`);
+  }
+  console.log("\nPromote with: npm run admin:bootstrap -- --central-id <id>");
 }
 
 async function main() {
   const { values } = parseArgs({
-    options: { email: { type: "string" }, name: { type: "string" }, force: { type: "boolean", default: false } },
+    options: {
+      "central-id": { type: "string" },
+      list: { type: "boolean", default: false },
+      force: { type: "boolean", default: false },
+      yes: { type: "boolean", default: false },
+    },
   });
 
-  const email = emailSchema.safeParse(values.email ?? "");
-  if (!email.success) throw new Error("Usage: npm run admin:bootstrap -- --email you@company.com [--name \"Your Name\"] [--force]");
+  if (values.list) return list();
+
+  const centralUserId = values["central-id"]?.trim();
+  if (!centralUserId) throw new Error("Usage: npm run admin:bootstrap -- --list | --central-id <id> [--yes] [--force]");
 
   const existingSuper = await prisma.adminRole.count({ where: { role: "SUPER_ADMIN" } });
   if (existingSuper > 0 && !values.force) {
@@ -74,49 +67,41 @@ async function main() {
   }
 
   const user = await prisma.user.findUnique({
-    where: { email: email.data },
-    select: { id: true, passwordHash: true, adminRole: { select: { role: true } } },
+    where: { centralUserId },
+    select: { id: true, email: true, name: true, createdAt: true, adminRole: { select: { role: true } } },
   });
-
-  if (user?.adminRole?.role === "SUPER_ADMIN") {
-    console.log(`${email.data} is already a SUPER_ADMIN. Nothing to do.`);
+  if (!user) throw new Error("No Veltrix user with that central ID. Sign in once with NazmulCodes first, then use --list.");
+  if (user.adminRole?.role === "SUPER_ADMIN") {
+    console.log(`${user.email} is already a SUPER_ADMIN. Nothing to do.`);
     return;
   }
 
-  // Ask for a password only when the account doesn't have one yet.
-  let passwordHash: string | null = null;
-  if (!user?.passwordHash) {
-    const pw = newPasswordSchema.safeParse(await askNewPassword());
-    if (!pw.success) throw new Error(pw.error.issues[0]?.message ?? "Invalid password");
-    passwordHash = await hashPassword(pw.data);
+  console.log(`\n  Central ID: ${centralUserId}\n  Email:      ${user.email}\n  Name:       ${user.name ?? "-"}\n  First seen: ${user.createdAt.toISOString()}\n`);
+  if (!values.yes) {
+    if (!process.stdin.isTTY) throw new Error("Not an interactive shell. Re-run with --yes after checking the details above.");
+    if (!(await confirm("Promote this account to SUPER_ADMIN? [y/N] "))) {
+      console.log("Cancelled.");
+      return;
+    }
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const u = user
-      ? passwordHash
-        ? await tx.user.update({ where: { id: user.id }, data: { passwordHash }, select: { id: true } })
-        : { id: user.id }
-      : await tx.user.create({ data: { email: email.data, name: values.name ?? null, passwordHash }, select: { id: true } });
-
+  await prisma.$transaction(async (tx) => {
     await tx.adminRole.upsert({
-      where: { userId: u.id },
-      create: { userId: u.id, role: "SUPER_ADMIN" },
+      where: { userId: user.id },
+      create: { userId: user.id, role: "SUPER_ADMIN" },
       update: { role: "SUPER_ADMIN" },
     });
-
     await writeAuditLog(tx, {
       actorId: null,
       action: "admin.bootstrap",
       targetType: "User",
-      targetId: u.id,
-      metadata: { email: email.data, createdUser: !user, forced: Boolean(values.force) },
+      targetId: user.id,
+      metadata: { centralUserId, forced: Boolean(values.force) },
       context: CLI_CONTEXT,
     });
-    return { userId: u.id, created: !user };
   });
 
-  console.log(`✓ ${email.data} is now SUPER_ADMIN (${result.created ? "new account" : "existing account promoted"}).`);
-  console.log("  Sign in at /login, then configure providers at /admin/providers.");
+  console.log(`✓ ${user.email} is now SUPER_ADMIN. Configure providers at /admin/providers.`);
 }
 
 main()

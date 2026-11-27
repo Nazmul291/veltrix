@@ -7,7 +7,10 @@ export interface RequestContext {
 
 export function getRequestContext(request: Request): RequestContext {
   const h = request.headers;
-  const ip = h.get("fly-client-ip") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  // Trust only the headers the current platform sets itself. Anything else can be sent by the client.
+  const ip = process.env.VERCEL
+    ? (h.get("x-real-ip") ?? h.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ?? null)
+    : (h.get("fly-client-ip") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null);
   return { ipAddress: ip, userAgent: h.get("user-agent")?.slice(0, 512) ?? null };
 }
 
