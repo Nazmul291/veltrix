@@ -9,6 +9,7 @@
  */
 import { useFetcher, useRevalidator } from "@remix-run/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PATHS } from "~/lib/paths";
 import type { PlanId } from "~/lib/plans";
 import { billingMutationSchema, type BillingActionData, type BillingMutation, type PaddleClientConfig } from "~/lib/schemas/billing";
 
@@ -73,7 +74,7 @@ export function useBilling(paddle: PaddleClientConfig | null, currentPlan: PlanI
       const parsed = billingMutationSchema.safeParse(m);
       if (!parsed.success) return setError("Invalid request");
       setError(null);
-      submitFetcher(parsed.data, { method: "post", action: "/billing" });
+      submitFetcher(parsed.data, { method: "post", action: PATHS.billing });
     },
     [submitFetcher],
   );

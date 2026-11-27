@@ -26,3 +26,46 @@ describe("route modules", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * Public vs protected routes (see app/lib/paths.ts).
+ * Anything not listed here must check access in its own module, because in Remix
+ * a child route's data can be fetched directly, without its parent layout's loader.
+ */
+const PUBLIC_ROUTES: Record<string, string> = {
+  "_index.tsx": "marketing homepage",
+  "login.tsx": "sign-in page",
+  "auth.login.ts": "starts SSO",
+  "auth.callback.ts": "SSO callback (state-checked)",
+  "logout.ts": "ends the caller's own session",
+  "billing.tsx": "redirect to /dashboard/billing, no data",
+  "webhooks.paddle.ts": "authenticated by Paddle's HMAC signature",
+  "api.cron.sweep.ts": "authenticated by CRON_SECRET",
+};
+
+describe("route protection", () => {
+  const files = readdirSync(ROUTES_DIR).filter((f) => /\.(ts|tsx)$/.test(f));
+  const source = (f: string) => readFileSync(join(ROUTES_DIR, f), "utf8");
+
+  it("every non-public route checks access itself", () => {
+    const unprotected = files.filter((f) => !(f in PUBLIC_ROUTES) && !/\brequire(User|Admin)\(/.test(source(f)));
+    expect(unprotected).toEqual([]);
+  });
+
+  it("admin routes require an admin role, not just a signed-in user", () => {
+    const weak = files.filter((f) => f.startsWith("admin") && !/\brequireAdmin\(/.test(source(f)));
+    expect(weak).toEqual([]);
+  });
+
+  it("customer pages live under /dashboard", () => {
+    // Pages that render UI for a signed-in user (not API routes, not admin, not public).
+    const misplaced = files.filter(
+      (f) => f.endsWith(".tsx") && !(f in PUBLIC_ROUTES) && !f.startsWith("dashboard") && !f.startsWith("admin"),
+    );
+    expect(misplaced).toEqual([]);
+  });
+
+  it("the public list has no stale entries", () => {
+    expect(Object.keys(PUBLIC_ROUTES).filter((f) => !files.includes(f))).toEqual([]);
+  });
+});

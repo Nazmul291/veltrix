@@ -75,9 +75,12 @@ async function signedOut(session: Session<SessionData>, error?: "signed_out" | "
   });
 }
 
-/** Ends only the Veltrix session. The user stays signed in at auth.nazmulcodes.org (SSO). */
+/**
+ * Ends only the Veltrix session. The user stays signed in at auth.nazmulcodes.org (SSO).
+ * Lands on the public homepage. It isn't protected, so the browser isn't sent straight back into SSO.
+ */
 export async function logout(request: Request) {
-  return signedOut(await getSession(request));
+  return redirect("/", { headers: { "Set-Cookie": await getStorage().destroySession(await getSession(request)) } });
 }
 
 /** Where to send a signed-out request: straight into SSO, then back to the page it asked for. */

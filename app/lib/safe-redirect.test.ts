@@ -6,13 +6,18 @@ describe("safeRedirect", () => {
     ["/admin/providers", "/admin/providers"],
     ["/billing?tab=plans#top", "/billing?tab=plans#top"],
     ["/a/../b", "/b"],
-    ["//evil.com", "/"],
-    ["/\\evil.com", "/"],
-    ["https://evil.com", "/"],
-    ["javascript:alert(1)", "/"],
-    ["/\nSet-Cookie: x", "/"],
-    ["", "/"],
-    [undefined, "/"],
-    [42, "/"],
+    ["//evil.com", "/dashboard"],
+    ["/\\evil.com", "/dashboard"],
+    ["https://evil.com", "/dashboard"],
+    ["javascript:alert(1)", "/dashboard"],
+    ["/\nSet-Cookie: x", "/dashboard"],
+    ["", "/dashboard"],
+    [undefined, "/dashboard"],
+    [42, "/dashboard"],
   ])("%j → %s", (input, expected) => expect(safeRedirect(input)).toBe(expected));
+
+  it("falls back to the dashboard by default, or to an explicit fallback", () => {
+    expect(safeRedirect("//evil.com")).toBe("/dashboard");
+    expect(safeRedirect("//evil.com", "/login")).toBe("/login");
+  });
 });
