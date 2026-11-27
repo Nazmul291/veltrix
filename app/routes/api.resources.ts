@@ -15,10 +15,6 @@ import { assertSameOrigin, requireUser } from "~/services/session.server";
 
 const noStore = { "Cache-Control": "no-store" };
 
-// Background provisioning started here (waitUntil) shares this function's time limit. 300s is the Vercel Hobby maximum.
-export const config = { maxDuration: 300 };
-
-
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
   await kickTenantJobs(user.id);

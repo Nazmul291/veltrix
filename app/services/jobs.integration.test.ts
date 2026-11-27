@@ -11,7 +11,14 @@ import { runtimeDatabaseUrl } from "./db.server";
 describe("runtimeDatabaseUrl", () => {
   it("prefers the pooled URL", () => {
     const url = runtimeDatabaseUrl({ DATABASE_URL: "postgres://u:p@db.prisma.io:5432/postgres", DATABASE_URL_POOLED: "postgres://u:p@pooled.db.prisma.io:5432/postgres?sslmode=require" });
-    expect(url).toBe("postgres://u:p@pooled.db.prisma.io:5432/postgres?sslmode=require");
+    expect(url).toBe("postgres://u:p@pooled.db.prisma.io:5432/postgres?sslmode=verify-full");
+  });
+  it("upgrades weaker sslmodes to verify-full and leaves local URLs alone", () => {
+    for (const mode of ["prefer", "require", "verify-ca"]) {
+      expect(runtimeDatabaseUrl({ DATABASE_URL: `postgres://u:p@h:5432/d?sslmode=${mode}&x=1` })).toBe("postgres://u:p@h:5432/d?sslmode=verify-full&x=1");
+    }
+    expect(runtimeDatabaseUrl({ DATABASE_URL: "postgres://u:p@h/d?sslmode=disable" })).toBe("postgres://u:p@h/d?sslmode=disable");
+    expect(runtimeDatabaseUrl({ DATABASE_URL: "postgresql://postgres:e2e@127.0.0.1:55432/veltrix" })).toBe("postgresql://postgres:e2e@127.0.0.1:55432/veltrix");
   });
   it("falls back to the direct URL", () => {
     expect(runtimeDatabaseUrl({ DATABASE_URL: "postgres://u:p@localhost/db", DATABASE_URL_POOLED: " " })).toBe("postgres://u:p@localhost/db");

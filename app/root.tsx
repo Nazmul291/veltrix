@@ -2,7 +2,10 @@ import type { LinksFunction } from "@remix-run/node";
 import { Links, Meta, Outlet, Scripts, ScrollRestoration, isRouteErrorResponse, useRouteError } from "@remix-run/react";
 import styles from "./tailwind.css?url";
 
-export const links: LinksFunction = () => [{ rel: "stylesheet", href: styles }];
+export const links: LinksFunction = () => [
+  { rel: "stylesheet", href: styles },
+  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (

@@ -2,7 +2,7 @@ import { PassThrough } from "node:stream";
 
 import type { AppLoadContext, EntryContext } from "@remix-run/node";
 import { createReadableStreamFromReadable } from "@remix-run/node";
-import { RemixServer } from "@remix-run/react";
+import { RemixServer, isRouteErrorResponse } from "@remix-run/react";
 import * as isbotModule from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 import { startSweeper } from "./services/jobs.server";
@@ -12,6 +12,18 @@ import { startSweeper } from "./services/jobs.server";
 startSweeper();
 
 const ABORT_DELAY = 5_000;
+
+/**
+ * Server error logging. Remix calls this for every error it catches. Plain 404s
+ * (crawlers, scanners, old links) and requests the client aborted aren't
+ * failures, so they aren't logged. That keeps real errors visible in Vercel's
+ * runtime logs.
+ */
+export function handleError(error: unknown, { request }: { request: Request }) {
+  if (request.signal.aborted) return;
+  if (isRouteErrorResponse(error) && error.status === 404) return;
+  console.error(error);
+}
 
 export default function handleRequest(
   request: Request,

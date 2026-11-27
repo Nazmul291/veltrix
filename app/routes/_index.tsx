@@ -11,9 +11,6 @@ import { listTenantResources } from "~/services/resources.server";
 import { requireUser } from "~/services/session.server";
 import { ResourceStoreProvider, type ResourceStoreInit } from "~/store/useResourceStore";
 
-// Background provisioning started from this loader shares its time limit. 300s is the Vercel Hobby maximum.
-export const config = { maxDuration: 300 };
-
 export const meta: MetaFunction = () => [{ title: "Dashboard · Veltrix" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
